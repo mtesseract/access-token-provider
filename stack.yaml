@@ -1,0 +1,4 @@
+resolver: lts-11.5
+packages:
+- .
+extra-deps: [katip-0.5.4.0, th-format-0.1.2.0]
