@@ -195,5 +195,5 @@ ropcgProviderReadsFromConf = do
 retrieveSomeToken :: KatipContextT IO ()
 retrieveSomeToken = do
   tokenProvider <- ATP.new (AccessTokenName "token-name")
-  token <- retrieveAccessToken tokenProvider
+  token <- ATP.retrieveAccessToken tokenProvider
   liftIO $ print token

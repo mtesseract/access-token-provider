@@ -15,7 +15,7 @@ import qualified Security.AccessTokenProvider as ATP
 retrieveSomeToken :: KatipContextT IO ()
 retrieveSomeToken = do
   tokenProvider <- ATP.new (AccessTokenName "token-name")
-  token <- retrieveAccessToken tokenProvider
+  token <- ATP.retrieveAccessToken tokenProvider
   liftIO $ print token
 ```
 
@@ -32,7 +32,7 @@ For OAuth2 (Resource Owner Password Credentials Grant) provider, use:
   "provider": "ropcg",
   "credentials_directory": "/optional/credentials/directory",
   "auth_endpoint": "<OAuth2 authentication endpoint>",
-  "tokens": {"label1": {"scopes": ["first-scope", "second-scope"]}}
+  "tokens": {"token-name": {"scopes": ["first-scope", "second-scope"]}}
 }
 ```
 
@@ -46,7 +46,7 @@ credentials respectively.
 ```json
 {
   "provider": "file",
-  "tokens": {"label1": "/some/file/name"}
+  "tokens": {"token-name": "/some/file/name"}
 }
 ```
 
@@ -58,7 +58,7 @@ environment variable `TOKEN_FILE`.
 ```json
 {
   "provider": "fixed",
-  "tokens": {"label1": "some-fixed-token"}
+  "tokens": {"token-name": "some-fixed-token"}
 }
 ```
 
