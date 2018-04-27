@@ -1,12 +1,11 @@
 module Security.AccessTokenProvider
   ( new
   , newWithProviders
+  , newWithBackend
   , providerProbeFile
   , providerProbeFixed
   , providerProbeRopcg
-  , MonadHttp(..)
-  , MonadFilesystem(..)
-  , MonadEnvironment(..)
+  , defaultProviders
   , AccessTokenName(..)
   , AccessTokenProvider(..)
   , AccessToken(..)

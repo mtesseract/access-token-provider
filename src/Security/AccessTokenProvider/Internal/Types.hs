@@ -11,28 +11,22 @@
 
 module Security.AccessTokenProvider.Internal.Types where
 
-import           Control.Arrow
 import           Control.Exception
-import           Control.Monad.IO.Class
-import           Control.Monad.Reader
-import           Control.Monad.Trans.Maybe
-import           Control.Monad.Trans.State
-import           Data.Aeson
+import           Data.Aeson                                           hiding
+                                                                       (Error)
 import           Data.Aeson.Casing
 import           Data.Aeson.TH
-import           Data.ByteString           (ByteString)
-import qualified Data.ByteString           as ByteString
-import qualified Data.ByteString.Lazy      as ByteString.Lazy
+import           Data.ByteString                                      (ByteString)
+import qualified Data.ByteString.Lazy                                 as ByteString.Lazy
 import           Data.Format
-import           Data.Map.Strict           (Map)
+import           Data.Map.Strict                                      (Map)
 import           Data.String
-import           Data.Text                 (Text)
-import qualified Data.Text                 as Text
+import           Data.Text                                            (Text)
 import           Data.Typeable
 import           GHC.Generics
-import           Katip
 import           Network.HTTP.Client
-import qualified System.Environment        as Env
+
+import           Security.AccessTokenProvider.Internal.Types.Severity
 
 type LazyByteString = ByteString.Lazy.ByteString
 
@@ -155,55 +149,28 @@ data AtpRopcgResponse =
 $(deriveJSON (aesonDrop 1 snakeCase) ''AtpRopcgResponse)
 
 newtype AtpProbe m =
-  AtpProbe (forall t. AccessTokenName -> m (Maybe (AccessTokenProvider m t)) )
+  AtpProbe (forall t. Backend m -> AccessTokenName -> m (Maybe (AccessTokenProvider m t)) )
 
-class Monad m => MonadFilesystem m where
-  fileRead :: FilePath -> m ByteString
-  default fileRead :: (m ~ t n, MonadTrans t, MonadFilesystem n) => FilePath -> m ByteString
-  fileRead = lift . fileRead
+data BackendHttp m = BackendHttp
+  { httpRequestExecute :: Request -> m (Response LazyByteString)
+  }
 
-instance MonadFilesystem IO where
-  fileRead = ByteString.readFile
+data BackendEnv m = BackendEnv
+  { envLookup :: Text -> m (Maybe Text)
+  }
 
-instance MonadFilesystem m => MonadFilesystem (ReaderT r m)
-instance MonadFilesystem m => MonadFilesystem (MaybeT m)
-instance MonadFilesystem m => MonadFilesystem (KatipContextT m)
-instance MonadFilesystem m => MonadFilesystem (KatipT m)
-instance MonadFilesystem m => MonadFilesystem (StateT s m)
+data BackendFilesystem m = BackendFilesystem
+  { fileRead :: FilePath -> m ByteString
+  }
 
-class Monad m => MonadEnvironment m where
-  environmentLookup :: Text -> m (Maybe Text)
-  default environmentLookup :: (m ~ t n, MonadTrans t, MonadEnvironment n)
-                            => Text
-                            -> m (Maybe Text)
-  environmentLookup = lift . environmentLookup
+data BackendLog m = BackendLog
+  { logAddNamespace :: forall a. Text -> m a -> m a
+  , logMsg          :: Severity -> Text -> m ()
+  }
 
-instance MonadEnvironment IO where
-  environmentLookup =
-    Text.unpack
-    >>> Env.lookupEnv
-    >>> liftIO
-    >>> fmap (fmap Text.pack)
-
-instance MonadEnvironment m => MonadEnvironment (ReaderT r m)
-instance MonadEnvironment m => MonadEnvironment (MaybeT m)
-instance MonadEnvironment m => MonadEnvironment (KatipContextT m)
-instance MonadEnvironment m => MonadEnvironment (KatipT m)
-instance MonadEnvironment m => MonadEnvironment (StateT s m)
-
-class Monad m => MonadHttp m where
-  httpRequestExecute :: Request -> Manager -> m (Response  LazyByteString)
-  default httpRequestExecute :: (m ~ t n, MonadTrans t, MonadHttp n)
-                             => Request
-                             -> Manager
-                             -> m (Response  LazyByteString)
-  httpRequestExecute req manager = lift $ httpRequestExecute req manager
-
-instance MonadHttp IO where
-  httpRequestExecute = httpLbs
-
-instance MonadHttp m => MonadHttp (ReaderT r m)
-instance MonadHttp m => MonadHttp (MaybeT m)
-instance MonadHttp m => MonadHttp (KatipContextT m)
-instance MonadHttp m => MonadHttp (KatipT m)
-instance MonadHttp m => MonadHttp (StateT s m)
+data Backend m = Backend
+  { backendHttp       :: BackendHttp m
+  , backendEnv        :: BackendEnv m
+  , backendFilesystem :: BackendFilesystem m
+  , backendLog        :: BackendLog m
+  }

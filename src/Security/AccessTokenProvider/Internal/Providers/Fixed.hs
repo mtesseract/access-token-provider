@@ -1,6 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuasiQuotes           #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Security.AccessTokenProvider.Internal.Providers.Fixed
@@ -15,37 +16,43 @@ import           Data.Format
 import           Data.List.NonEmpty                                     (NonEmpty (..))
 import qualified Data.Map                                               as Map
 import           Data.Maybe
-import           Katip
 
 import qualified Security.AccessTokenProvider.Internal.Lenses           as L
 import           Security.AccessTokenProvider.Internal.Providers.Common
 import           Security.AccessTokenProvider.Internal.Types
+import qualified Security.AccessTokenProvider.Internal.Types.Severity   as Severity
 
 providerProbeFixed
-  :: (KatipContext m, MonadIO m, MonadThrow m, MonadEnvironment m)
-  => AccessTokenName
+  :: (MonadIO m, MonadThrow m)
+  => Backend m
+  -> AccessTokenName
   -> m (Maybe (AccessTokenProvider m t))
-providerProbeFixed tokenName = katipAddNamespace "probe-fixed" $
-  tryNewProvider tokenName makeEnvConf pure createEnvTokenProvider
+providerProbeFixed backend tokenName = do
+  let BackendLog { .. } = backendLog backend
+  logAddNamespace "probe-fixed" $
+    tryNewProvider tokenName makeEnvConf pure (createEnvTokenProvider backend)
 
   where makeEnvConf = do
-          maybeToken <- environmentLookup  "TOKEN"
+          let envBackend = backendEnv backend
+          maybeToken <- envLookup envBackend  "TOKEN"
           case maybeToken of
             Just token -> pure . Just $ AtpConfFixed { _tokens = Just Map.empty
                                                      , _token = Just token }
-            Nothing -> tryEnvDeserialization ("fixed" :| [])
+            Nothing -> tryEnvDeserialization backend ("fixed" :| [])
 
 createEnvTokenProvider
-  :: (KatipContext m, MonadEnvironment m)
-  => AccessTokenName
+  :: Monad m
+  => Backend m
+  -> AccessTokenName
   -> AtpConfFixed
   -> m (Maybe (AccessTokenProvider m t))
-createEnvTokenProvider (AccessTokenName tokenName) conf =
-  let tokensMap  = fromMaybe Map.empty (conf^.L.tokens)
+createEnvTokenProvider backend (AccessTokenName tokenName) conf =
+  let BackendLog { .. } = backendLog backend
+      tokensMap  = fromMaybe Map.empty (conf^.L.tokens)
       maybeToken = (conf^.L.token) <|> Map.lookup tokenName tokensMap
   in case maybeToken of
        Just token -> do
-         logFM InfoS (ls [fmt|AccessTokenProvider started|])
+         logMsg Severity.Info [fmt|AccessTokenProvider started|]
          pure . Just $ AccessTokenProvider
            { retrieveAccessToken = pure (AccessToken token)
            , releaseProvider = pure ()

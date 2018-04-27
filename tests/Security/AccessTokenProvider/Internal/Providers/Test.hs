@@ -15,14 +15,12 @@ import qualified Data.Map.Strict                            as Map
 import qualified Data.Text                                  as Text
 import qualified Data.Text.Encoding                         as Text
 import           Data.UUID                                  (UUID)
-import           Katip
 import           Network.HTTP.Client.Internal
 import           Network.HTTP.Types.Status
 import           Network.HTTP.Types.Version
 import           System.Random
 import           Test.Tasty
 import           Test.Tasty.HUnit
-import           UnliftIO.Concurrent
 
 import           Security.AccessTokenProvider
 import qualified Security.AccessTokenProvider               as ATP
@@ -57,9 +55,11 @@ fixedProviderReadsFromToken = do
                   , _testStateEnvironment = Map.fromList [ ("TOKEN", token) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
+                  , _testStateLog = []
                   }
   evalTestStack testState $ do
-    tokenProvider <- new (AccessTokenName "some-random-token-name")
+    tokenProvider <- newWithBackend mockBackend
+                     (AccessTokenName "some-random-token-name")
     (AccessToken token') <- retrieveAccessToken tokenProvider
     liftIO $ token @=? token'
 
@@ -72,9 +72,10 @@ fixedProviderReadsFromConf = do
                   , _testStateEnvironment = Map.fromList [ ("ATP_CONF", conf) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
+                  , _testStateLog = []
                   }
   evalTestStack testState $ do
-    tokenProvider <- new (AccessTokenName "label1")
+    tokenProvider <- newWithBackend mockBackend (AccessTokenName "label1")
     (AccessToken token') <- retrieveAccessToken tokenProvider
     liftIO $ token @=? token'
 
@@ -87,9 +88,10 @@ fixedProviderReadsFromConfLookupFails = do
                   , _testStateEnvironment = Map.fromList [ ("ATP_CONF", conf) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
+                  , _testStateLog = []
                   }
   evalTestStack testState $ do
-    Left _ <- tryAny $ new (AccessTokenName "label2")
+    Left _ <- tryAny $ newWithBackend mockBackend (AccessTokenName "label2")
     pure ()
 
 fileProviderReadsFromTokenFile :: Assertion
@@ -104,9 +106,10 @@ fileProviderReadsFromTokenFile = do
                       Map.fromList [ ("TOKEN_FILE", Text.pack filename) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
+                  , _testStateLog = []
                   }
   evalTestStack testState $ do
-    tokenProvider <- new (AccessTokenName "some-random-token-name")
+    tokenProvider <- newWithBackend mockBackend (AccessTokenName "some-random-token-name")
     (AccessToken token') <- retrieveAccessToken tokenProvider
     liftIO $ tokenText @=? token'
 
@@ -123,9 +126,10 @@ fileProviderReadsFromConf = do
                       Map.fromList [ ("ATP_CONF", conf) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
+                  , _testStateLog = []
                   }
   evalTestStack testState $ do
-    tokenProvider <- new (AccessTokenName "label1")
+    tokenProvider <- newWithBackend mockBackend (AccessTokenName "label1")
     (AccessToken token') <- retrieveAccessToken tokenProvider
     liftIO $ tokenText @=? token'
 
@@ -142,9 +146,10 @@ fileProviderReadsFromConfLookupFails = do
                       Map.fromList [ ("ATP_CONF", conf) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
+                  , _testStateLog = []
                   }
   evalTestStack testState $ do
-    Left _ <- tryAny $ new (AccessTokenName "label2")
+    Left _ <- tryAny $ newWithBackend mockBackend (AccessTokenName "label2")
     pure ()
 
 ropcgProviderReadsFromConf :: Assertion
@@ -155,7 +160,7 @@ ropcgProviderReadsFromConf = do
                     "auth_endpoint": "https://localhost",
                     "tokens": {"label1": {"scopes": ["foo"]}}
                   }|]
-      responseBody = ByteString.Lazy.fromStrict . Text.encodeUtf8 $
+      rspBody = ByteString.Lazy.fromStrict . Text.encodeUtf8 $
         [fmt|{"scope":        "foo",
               "expires_in":   60,
               "token_type":   "test",
@@ -164,7 +169,7 @@ ropcgProviderReadsFromConf = do
       response = Response { responseStatus    = ok200
                           , responseVersion   = http20
                           , responseHeaders   = []
-                          , responseBody      = responseBody
+                          , responseBody      = rspBody
                           , responseCookieJar = CJ []
                           , responseClose'    = ResponseClose (pure ())
                           }
@@ -183,17 +188,18 @@ ropcgProviderReadsFromConf = do
                   , _testStateEnvironment  = Map.fromList [ ("ATP_CONF", conf) ]
                   , _testStateHttpResponse = Just response
                   , _testStateHttpRequests = []
+                  , _testStateLog = []
                   }
   (_, testState') <- runTestStack testState $ do
-    tokenProvider <- new (AccessTokenName "label1")
+    tokenProvider <- newWithBackend mockBackend (AccessTokenName "label1")
     (AccessToken token) <- retrieveAccessToken tokenProvider
     liftIO $ tokenText @=? token
     pure ()
   1 @=? length (testState'^.testStateHttpRequests)
   pure ()
 
-retrieveSomeToken :: KatipContextT IO ()
+retrieveSomeToken :: IO ()
 retrieveSomeToken = do
   tokenProvider <- ATP.new (AccessTokenName "token-name")
   token <- ATP.retrieveAccessToken tokenProvider
-  liftIO $ print token
+  print token
