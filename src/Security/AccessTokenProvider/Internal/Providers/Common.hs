@@ -50,18 +50,19 @@ tryEnvDeserialization
   => Backend m
   -> NonEmpty Text
   -> m (Maybe a)
-tryEnvDeserialization backend providers = do
+tryEnvDeserialization backend providerNames = do
   let BackendEnv { .. } = backendEnv backend
       BackendLog { .. } = backendLog backend
   maybeConf <- runMaybeT $ do
     envVal <- MaybeT $ envLookup atpConfVarName
     jsonVal :: Value <- lift $ throwDecode (Text.encodeUtf8 envVal)
-    provider <- MaybeT . pure $ jsonVal ^? key "provider" . _String
-    lift $ logMsg Severity.Debug [fmt|ATP_CONF requests AccessTokenProvider '${provider}'|]
-    if provider `elem` providers
-      then do lift $ logMsg Severity.Info [fmt|Using AccessTokenProvider '${NonEmpty.head providers}'|]
+    requestedProvider <- MaybeT . pure $ jsonVal ^? key "provider" . _String
+    let thisProvider = NonEmpty.head providerNames
+    if requestedProvider `elem` providerNames
+      then do lift $ logMsg Severity.Info [fmt|Using access token provider '${thisProvider}'|]
               pure jsonVal
-      else MaybeT (pure Nothing)
+      else do lift $ logMsg Severity.Debug [fmt|Skipping access token provider '${thisProvider}'|]
+              MaybeT (pure Nothing)
   case maybeConf of
     Just conf ->
       Just <$> throwDecodeValue conf
