@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuasiQuotes           #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Security.AccessTokenProvider.Internal.Providers.OAuth2.Ropcg
@@ -24,7 +25,6 @@ import           Data.Maybe
 import           Data.Monoid
 import qualified Data.Text                                              as Text
 import qualified Data.Text.Encoding                                     as Text
-import           Katip
 import           Network.HTTP.Client
 import           Network.HTTP.Client.TLS
 import           Network.HTTP.Types
@@ -38,23 +38,21 @@ import           UnliftIO.STM
 import qualified Security.AccessTokenProvider.Internal.Lenses           as L
 import           Security.AccessTokenProvider.Internal.Providers.Common
 import           Security.AccessTokenProvider.Internal.Types
+import qualified Security.AccessTokenProvider.Internal.Types.Severity   as Severity
 import           Security.AccessTokenProvider.Internal.Util
 
 providerProbeRopcg
   :: ( MonadMask m
-     , MonadUnliftIO m
-     , KatipContext m
-     , MonadEnvironment m
-     , MonadHttp m
-     , MonadFilesystem m )
-  => AccessTokenName
+     , MonadUnliftIO m )
+  => Backend m
+  -> AccessTokenName
   -> m (Maybe (AccessTokenProvider m t))
-providerProbeRopcg tokenName =
+providerProbeRopcg backend tokenName =
   tryNewProvider tokenName mkConf createRopcgConf
-    createTokenProviderResourceOwnerPasswordCredentials
+  (createTokenProviderResourceOwnerPasswordCredentials backend)
 
   where mkConf =
-          tryEnvDeserialization
+          tryEnvDeserialization backend
           ("resource-owner-password-credentials-grant" :| ["ropcg"])
 
 -- | Derive an authorization header from provided client credentials.
@@ -69,29 +67,33 @@ makeBasicAuthorizationHeader credentials =
   in ("Authorization", "Basic " <> b64Token)
 
 retrieveJson
-  :: (MonadFilesystem m, KatipContext m, FromJSON a, MonadCatch m)
-  => FilePath
+  :: (FromJSON a, MonadCatch m)
+  => Backend m
+  -> FilePath
   -> m a
-retrieveJson filename = do
-  content <- fileRead filename
+retrieveJson backend filename = do
+  let fsBackend = backendFilesystem backend
+      BackendLog { .. } = backendLog backend
+  content <- fileRead fsBackend filename
   case eitherDecodeStrict content of
     Right a      -> return a
     Left  errMsgStr -> do
       let errMsg = Text.pack errMsgStr
-      logFM ErrorS (ls [fmt|JSON deserialization error: $errMsg|])
+      logMsg Severity.Error [fmt|JSON deserialization error: $errMsg|]
       throwM . AccessTokenProviderDeserialization $
         [fmt|Failed to deserialize '${filename}': $errMsg|]
 
 -- | Retrieve credentials from credentials directory.
 retrieveCredentials
-  :: (MonadFilesystem m, KatipContext m, MonadCatch m)
-  => AtpConfRopcg
+  :: (MonadCatch m)
+  => Backend m
+  -> AtpConfRopcg
   -> m Credentials
-retrieveCredentials conf = do
+retrieveCredentials backend conf = do
   let baseDir = conf^.L.credentialsDirectory
-  userCred   <- retrieveJson
+  userCred   <- retrieveJson backend
                 (prefixIfRelative baseDir (conf^.L.resourceOwnerPasswordFile))
-  clientCred <- retrieveJson
+  clientCred <- retrieveJson backend
                 (prefixIfRelative baseDir (conf^.L.clientPasswordFile))
   return Credentials { _user   = userCred
                      , _client = clientCred }
@@ -130,11 +132,11 @@ retrieveCredentialsDir envConf =
       liftIO (fromMaybe "." <$> Env.lookupEnv envCredentialsDirectory)
 
 createRopcgConf
-  :: (KatipContext m, MonadIO m, MonadCatch m)
+  :: (MonadIO m, MonadCatch m)
   => AtpPreconfRopcg
   -> m AtpConfRopcg
 createRopcgConf envConf = do
-  authEndpoint         <- parseEndpoint "authentication" (envConf^.L.authEndpoint)
+  authEndpoint         <- parseEndpoint (envConf^.L.authEndpoint)
   credentialsDirectory <- retrieveCredentialsDir envConf
   let clientPasswordFile        = fromMaybe defaultClientPasswordFile
                                   (envConf^.L.clientPasswordFile)
@@ -159,19 +161,16 @@ createRopcgConf envConf = do
 
 -- | Main refreshing function.
 tryRefreshToken
-  :: ( MonadCatch m
-     , KatipContext m
-     , MonadHttp m
-     , MonadFilesystem m )
-  => AtpConfRopcg
+  :: ( MonadCatch m )
+  => Backend m
+  -> AtpConfRopcg
   -> AccessTokenName
   -> AtpRopcgTokenDef
   -> m AtpRopcgResponse
-tryRefreshToken conf tokenName tokenDef =
-  katipAddContext (sl "tokenName" tokenName) $
-  katipAddNamespace "refreshActionOne" $ do
-  credentials <- retrieveCredentials conf
-  let manager        = conf^.L.manager
+tryRefreshToken backend conf tokenName tokenDef =
+  logAddNamespace "refreshActionOne" $ do
+  credentials <- retrieveCredentials backend conf
+  let httpBackend    = backendHttp backend
       bodyParameters =
         [ ("grant_type", "password")
         , ("username",   Text.encodeUtf8 (credentials^.L.user.L.applicationUsername))
@@ -182,23 +181,25 @@ tryRefreshToken conf tokenName tokenDef =
                                               , requestHeaders = [authorization] }
                        & urlEncodedBody bodyParameters
       maskedRequest  = Text.pack . show $ maskHttpRequest httpRequest
-  logFM DebugS (ls [fmt|HTTP Request for token refreshing: $maskedRequest|])
-  response <- httpRequestExecute httpRequest manager
+  logMsg Severity.Debug [fmt|HTTP Request for token refreshing: $maskedRequest|]
+  response <- httpRequestExecute httpBackend httpRequest
   let status = responseStatus response
       body   = responseBody response
   when (status /= ok200) $ do
-    logFM ErrorS (ls [fmt|Failed to refresh token: ${tshow response}|])
+    logMsg Severity.Error [fmt|Failed to refresh token: ${tshow response}|]
     throwM $ decodeOAuth2Error status body
   case eitherDecode body :: Either String AtpRopcgResponse of
     Right tokenResponse -> do
-      logFM DebugS (ls [fmt|Successfully refreshed token '${tokenName}'|])
+      logMsg Severity.Debug [fmt|Successfully refreshed token '${tokenName}'|]
       pure tokenResponse
     Left errMsgS -> do
       let errMsg = Text.pack errMsgS
-      logFM ErrorS (ls [fmt|Deserialization of token response failed: $errMsg|])
+      logMsg Severity.Error [fmt|Deserialization of token response failed: $errMsg|]
       throwM $ AccessTokenProviderDeserialization errMsg
 
   where packScopes = ByteString.intercalate " " . map Text.encodeUtf8
+
+        BackendLog { .. } = backendLog backend
 
         decodeOAuth2Error status body =
           case decode body of
@@ -209,17 +210,16 @@ tryRefreshToken conf tokenName tokenDef =
                 [fmt|Deserialization of OAuth2 error object failed; response status: ${tshow status}'|]
 
 tokenRefreshLoop
-  :: ( MonadCatch m
-     , KatipContext m
-     , MonadHttp m
-     , MonadFilesystem m )
-  => AtpConfRopcg
+  :: forall m t
+   . (MonadCatch m, MonadIO m)
+  => Backend m
+  -> AtpConfRopcg
   -> AccessTokenName
   -> AtpRopcgTokenDef
   -> TMVar (Either SomeException (AccessToken t))
   -> m ()
-tokenRefreshLoop conf tokenName tokenDef cache = forever $ do
-  eitherTokenResponse <- tryAny (tryRefreshToken conf tokenName tokenDef)
+tokenRefreshLoop backend conf tokenName tokenDef cache = forever $ do
+  eitherTokenResponse <- tryAny (tryRefreshToken backend conf tokenName tokenDef)
   atomically $ do
     let eitherToken = AccessToken . view L.accessToken <$> eitherTokenResponse
     isEmptyTMVar cache >>= \ case
@@ -231,8 +231,7 @@ tokenRefreshLoop conf tokenName tokenDef cache = forever $ do
 
   where -- Returns duration in seconds.
         computeDurationToWait
-          :: KatipContext m
-          => Either SomeException AtpRopcgResponse
+          :: Either SomeException AtpRopcgResponse
           -> m Double
         computeDurationToWait eitherTokenResponse =
           case eitherTokenResponse of
@@ -243,8 +242,10 @@ tokenRefreshLoop conf tokenName tokenDef cache = forever $ do
                   Nothing ->
                     pure defaultRefreshInterval
               Left exn -> do
-                logFM ErrorS (ls [fmt|Failed to refresh token '${tokenName}': $exn|])
+                logMsg Severity.Error [fmt|Failed to refresh token '${tokenName}': $exn|]
                 liftIO $ randomRIO (1, 10) -- Some jitter: wait 1 - 10 seconds.
+
+        BackendLog { .. } = backendLog backend
 
 -- | In seconds.
 defaultRefreshInterval :: Double
@@ -257,43 +258,41 @@ defaultRefreshTimeFactor = 0.8
 
 createTokenProviderResourceOwnerPasswordCredentials
   :: ( MonadUnliftIO m
-     , MonadMask m
-     , KatipContext m
-     , MonadHttp m
-     , MonadFilesystem m )
-  => AccessTokenName
+     , MonadMask m )
+  => Backend m
+  -> AccessTokenName
   -> AtpConfRopcg
   -> m (Maybe (AccessTokenProvider m t))
-createTokenProviderResourceOwnerPasswordCredentials tokenName conf = do
+createTokenProviderResourceOwnerPasswordCredentials backend tokenName conf = do
   let (AccessTokenName tokenNameText) = tokenName
+      BackendLog { .. } = backendLog backend
       maybeTokenDef = Map.lookup tokenNameText (conf^.L.tokens)
                       <|> (conf^.L.token)
 
   case maybeTokenDef of
     Just tokenDef -> do
-      logFM InfoS (ls [fmt|AccessTokenProvider starting|])
+      logMsg Severity.Info [fmt|AccessTokenProvider starting|]
       provider <- newProvider tokenDef
       pure (Just provider)
     Nothing ->
       pure Nothing
 
   where newProvider tokenDef = do
-          (retrieveAction, releaseAction) <- newRetrieveAction conf tokenName tokenDef
+          (retrieveAction, releaseAction) <- newRetrieveAction
+            backend conf tokenName tokenDef
           pure AccessTokenProvider { retrieveAccessToken = retrieveAction
                                    , releaseProvider     = releaseAction }
 newRetrieveAction
-  :: ( KatipContext m
-     , MonadUnliftIO m
-     , MonadCatch m
-     , MonadHttp m
-     , MonadFilesystem m )
-  => AtpConfRopcg
+  :: ( MonadUnliftIO m
+     , MonadCatch m )
+  => Backend m
+  -> AtpConfRopcg
   -> AccessTokenName
   -> AtpRopcgTokenDef
   -> m (m (AccessToken t), m ())
-newRetrieveAction conf tokenName tokenDef = do
+newRetrieveAction backend conf tokenName tokenDef = do
   cache <- atomically newEmptyTMVar
-  asyncHandle <- async $ tokenRefreshLoop conf tokenName tokenDef cache
+  asyncHandle <- async $ tokenRefreshLoop backend conf tokenName tokenDef cache
   link asyncHandle
   pure $ do
     let retrieveAction = atomically (readTMVar cache) >>= \ case

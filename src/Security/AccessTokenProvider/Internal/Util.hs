@@ -13,10 +13,8 @@ import           Control.Monad.IO.Class
 import           Data.Aeson
 import           Data.ByteString                             (ByteString)
 import qualified Data.ByteString.Lazy                        as ByteString.Lazy
-import           Data.Format
 import           Data.Text                                   (Text)
 import qualified Data.Text                                   as Text
-import           Katip
 import           Network.HTTP.Client
 
 import           Security.AccessTokenProvider.Internal.Types
@@ -38,13 +36,11 @@ throwDecodeValue val =
       throwM $ AccessTokenProviderDeserialization (Text.pack errMsg)
 
 parseEndpoint
-  :: (KatipContext m, MonadIO m, MonadCatch m)
+  :: (MonadIO m, MonadCatch m)
   => Text
-  -> Text
   -> m Request
-parseEndpoint label endpoint =
+parseEndpoint endpoint =
   parseRequest (Text.unpack endpoint) `catchAny` \ exn -> do
-    logFM ErrorS (ls [fmt|Failed to parse $label endpoint '${endpoint}': $exn|])
     throwM exn
 
 tshow

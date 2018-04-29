@@ -12,11 +12,11 @@ environment variables. It uses Katip for logging.
 ```haskell
 import qualified Security.AccessTokenProvider as ATP
 
-retrieveSomeToken :: KatipContextT IO ()
+retrieveSomeToken :: IO ()
 retrieveSomeToken = do
   tokenProvider <- ATP.new (AccessTokenName "token-name")
   token <- ATP.retrieveAccessToken tokenProvider
-  liftIO $ print token
+  print token
 ```
 
 ## Configuration

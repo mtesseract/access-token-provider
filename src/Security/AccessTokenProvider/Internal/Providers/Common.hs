@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE QuasiQuotes         #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Security.AccessTokenProvider.Internal.Providers.Common
@@ -15,17 +16,17 @@ import           Control.Monad.Trans.Maybe
 import           Data.Aeson
 import           Data.Aeson.Lens
 import           Data.Format
-import           Data.List.NonEmpty                          (NonEmpty)
-import qualified Data.List.NonEmpty                          as NonEmpty
-import           Data.Text                                   (Text)
-import qualified Data.Text.Encoding                          as Text
-import           Katip
+import           Data.List.NonEmpty                                   (NonEmpty)
+import qualified Data.List.NonEmpty                                   as NonEmpty
+import           Data.Text                                            (Text)
+import qualified Data.Text.Encoding                                   as Text
 
 import           Security.AccessTokenProvider.Internal.Types
+import qualified Security.AccessTokenProvider.Internal.Types.Severity as Severity
 import           Security.AccessTokenProvider.Internal.Util
 
 tryNewProvider
-  :: (MonadIO m, MonadThrow m, KatipContext m)
+  :: (MonadIO m, MonadThrow m)
   => AccessTokenName
   -> m (Maybe envConf)
   -> (envConf -> m conf)
@@ -45,21 +46,23 @@ atpConfVarName = "ATP_CONF"
 
 tryEnvDeserialization
   :: ( MonadThrow m
-     , MonadEnvironment m
-     , FromJSON a
-     , KatipContext m )
-  => NonEmpty Text
+     , FromJSON a )
+  => Backend m
+  -> NonEmpty Text
   -> m (Maybe a)
-tryEnvDeserialization providers = do
+tryEnvDeserialization backend providerNames = do
+  let BackendEnv { .. } = backendEnv backend
+      BackendLog { .. } = backendLog backend
   maybeConf <- runMaybeT $ do
-    envVal <- MaybeT $ environmentLookup atpConfVarName
+    envVal <- MaybeT $ envLookup atpConfVarName
     jsonVal :: Value <- lift $ throwDecode (Text.encodeUtf8 envVal)
-    provider <- MaybeT . pure $ jsonVal ^? key "provider" . _String
-    logFM DebugS (ls [fmt|ATP_CONF requests AccessTokenProvider '${provider}'|])
-    if provider `elem` providers
-      then do logFM InfoS (ls [fmt|Using AccessTokenProvider '${NonEmpty.head providers}'|])
+    requestedProvider <- MaybeT . pure $ jsonVal ^? key "provider" . _String
+    let thisProvider = NonEmpty.head providerNames
+    if requestedProvider `elem` providerNames
+      then do lift $ logMsg Severity.Info [fmt|Using access token provider '${thisProvider}'|]
               pure jsonVal
-      else MaybeT (pure Nothing)
+      else do lift $ logMsg Severity.Debug [fmt|Skipping access token provider '${thisProvider}'|]
+              MaybeT (pure Nothing)
   case maybeConf of
     Just conf ->
       Just <$> throwDecodeValue conf
