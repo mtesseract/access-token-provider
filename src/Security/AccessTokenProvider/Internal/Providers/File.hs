@@ -9,7 +9,6 @@ module Security.AccessTokenProvider.Internal.Providers.File
   ( providerProbeFile
   ) where
 
-import           Control.Applicative
 import           Control.Exception.Safe
 import           Control.Lens
 import           Control.Monad.IO.Unlift
@@ -17,7 +16,6 @@ import           Data.Format
 import           Data.List.NonEmpty                                     (NonEmpty (..))
 import qualified Data.Map                                               as Map
 import           Data.Maybe
-import qualified Data.Text                                              as Text
 import qualified Data.Text.Encoding                                     as Text
 import           UnliftIO.STM
 
@@ -35,17 +33,10 @@ providerProbeFile
 providerProbeFile backend tokenName = do
   let BackendLog { .. } = backendLog backend
   logAddNamespace "probe-file" $
+
     tryNewProvider tokenName makeConf pure (createFilePathTokenProvider backend)
 
-  where makeConf = do
-          let envBackend = backendEnv backend
-          maybeTokenFile <- fmap Text.unpack <$> envLookup envBackend  "TOKEN_FILE"
-          case maybeTokenFile of
-            Just tokenFile ->
-              pure . Just $ AtpConfFile { _tokens = Just Map.empty
-                                        , _token  = Just tokenFile }
-            Nothing ->
-              tryEnvDeserialization backend ("file" :| [])
+  where makeConf = tryEnvDeserialization backend "FILE" ("file" :| [])
 
 createFilePathTokenProvider
   :: ( MonadUnliftIO m
@@ -57,9 +48,7 @@ createFilePathTokenProvider
 createFilePathTokenProvider backend (AccessTokenName tokenName) conf = do
   let BackendLog { .. } = backendLog backend
       tokenFileMap = fromMaybe Map.empty (conf ^. L.tokens)
-      maybeTokenFile = Map.lookup tokenName tokenFileMap <|> (conf^.L.token)
-
-  case maybeTokenFile of
+  case Map.lookup tokenName tokenFileMap of
     Just filename -> do
       logMsg Severity.Info [fmt|AccessTokenProvider starting|]
       provider <- newProvider filename
