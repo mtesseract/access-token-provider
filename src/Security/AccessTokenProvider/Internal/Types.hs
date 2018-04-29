@@ -48,14 +48,12 @@ instance Format AccessTokenName where
 
 data AtpConfFixed =
   AtpConfFixed { _tokens :: Maybe (Map Text Text)
-               , _token  :: Maybe Text
                } deriving (Eq, Show, Generic)
 
 $(deriveJSON (aesonDrop 1 snakeCase) ''AtpConfFixed)
 
 data AtpConfFile =
   AtpConfFile { _tokens :: Maybe (Map Text FilePath)
-              , _token  :: Maybe FilePath
               } deriving (Eq, Show, Generic)
 
 $(deriveJSON (aesonDrop 1 snakeCase) ''AtpConfFile)
@@ -74,7 +72,6 @@ data AtpPreconfRopcg =
   , _refreshTimeFactor         :: Maybe Double
   , _authEndpoint              :: Text
   , _tokens                    :: Map Text AtpRopcgTokenDef
-  , _token                     :: Maybe AtpRopcgTokenDef
   } deriving (Eq, Show, Generic)
 
 $(deriveJSON (aesonDrop 1 snakeCase) ''AtpPreconfRopcg)
@@ -88,7 +85,6 @@ data AtpConfRopcg =
   , _authEndpoint              :: Request
   , _manager                   :: Manager
   , _tokens                    :: Map Text AtpRopcgTokenDef
-  , _token                     :: Maybe AtpRopcgTokenDef
   } deriving (Generic)
 
 -- | Type modelling the content of the credentials stored in a

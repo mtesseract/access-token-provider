@@ -18,6 +18,7 @@ import           Data.Aeson.Lens
 import           Data.Format
 import           Data.List.NonEmpty                                   (NonEmpty)
 import qualified Data.List.NonEmpty                                   as NonEmpty
+import           Data.Monoid
 import           Data.Text                                            (Text)
 import qualified Data.Text.Encoding                                   as Text
 
@@ -48,13 +49,14 @@ tryEnvDeserialization
   :: ( MonadThrow m
      , FromJSON a )
   => Backend m
+  -> Text
   -> NonEmpty Text
   -> m (Maybe a)
-tryEnvDeserialization backend providerNames = do
+tryEnvDeserialization backend envName providerNames = do
   let BackendEnv { .. } = backendEnv backend
       BackendLog { .. } = backendLog backend
   maybeConf <- runMaybeT $ do
-    envVal <- MaybeT $ envLookup atpConfVarName
+    envVal <- MaybeT $ envLookup (atpConfVarName <> "_" <> envName)
     jsonVal :: Value <- lift $ throwDecode (Text.encodeUtf8 envVal)
     requestedProvider <- MaybeT . pure $ jsonVal ^? key "provider" . _String
     let thisProvider = NonEmpty.head providerNames

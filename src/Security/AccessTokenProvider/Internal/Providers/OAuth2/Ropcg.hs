@@ -9,7 +9,6 @@ module Security.AccessTokenProvider.Internal.Providers.OAuth2.Ropcg
   ( providerProbeRopcg
   ) where
 
-import           Control.Applicative
 import           Control.Exception.Safe
 import           Control.Lens
 import           Control.Monad
@@ -52,7 +51,7 @@ providerProbeRopcg backend tokenName =
   (createTokenProviderResourceOwnerPasswordCredentials backend)
 
   where mkConf =
-          tryEnvDeserialization backend
+          tryEnvDeserialization backend "ROPCG"
           ("resource-owner-password-credentials-grant" :| ["ropcg"])
 
 -- | Derive an authorization header from provided client credentials.
@@ -153,7 +152,6 @@ createRopcgConf envConf = do
     , _authEndpoint              = authEndpoint
     , _manager                   = manager
     , _tokens                    = envConf^.L.tokens
-    , _token                     = envConf^.L.token
     }
 
   where defaultResourceOwnerPasswordFile = "user.json"
@@ -267,8 +265,6 @@ createTokenProviderResourceOwnerPasswordCredentials backend tokenName conf = do
   let (AccessTokenName tokenNameText) = tokenName
       BackendLog { .. } = backendLog backend
       maybeTokenDef = Map.lookup tokenNameText (conf^.L.tokens)
-                      <|> (conf^.L.token)
-
   case maybeTokenDef of
     Just tokenDef -> do
       logMsg Severity.Info [fmt|AccessTokenProvider starting|]

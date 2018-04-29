@@ -11,8 +11,10 @@ import           Control.Lens
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy                       as ByteString.Lazy
 import           Data.Format
+import           Data.List.NonEmpty                         (NonEmpty (..))
+import qualified Data.List.NonEmpty                         as NonEmpty
 import qualified Data.Map.Strict                            as Map
-import qualified Data.Text                                  as Text
+import           Data.Semigroup
 import qualified Data.Text.Encoding                         as Text
 import           Data.UUID                                  (UUID)
 import           Network.HTTP.Client.Internal
@@ -30,14 +32,12 @@ import           Test
 securityAccessTokenProviderInternalProvidersTest :: [TestTree]
 securityAccessTokenProviderInternalProvidersTest =
   [ testGroup "Security.AccessTokenProvider.Internal.Providers"
-    [ testCase "Fixed Provider reads from TOKEN"
-        fixedProviderReadsFromToken
+    [ testCase "SimpleFixed Provider reads from TOKEN"
+        simpleFixedProviderReadsFromToken
     , testCase "Fixed Provider reads from ATP_CONF"
         fixedProviderReadsFromConf
     , testCase "Fixed Provider reads from ATP_CONF and lookup fails"
         fixedProviderReadsFromConfLookupFails
-    , testCase "File Provider reads from TOKEN_FILE"
-        fileProviderReadsFromTokenFile
     , testCase "File Provider reads from ATP_CONF"
         fileProviderReadsFromConf
     , testCase "File Provider reads from ATP_CONF and lookup fails"
@@ -47,8 +47,8 @@ securityAccessTokenProviderInternalProvidersTest =
     ]
   ]
 
-fixedProviderReadsFromToken :: Assertion
-fixedProviderReadsFromToken = do
+simpleFixedProviderReadsFromToken :: Assertion
+simpleFixedProviderReadsFromToken = do
   token <- tshow <$> (randomIO :: IO UUID)
   let testState = TestState
                   { _testStateFilesystem = Map.empty
@@ -58,7 +58,8 @@ fixedProviderReadsFromToken = do
                   , _testStateLog = []
                   }
   evalTestStack testState $ do
-    tokenProvider <- newWithBackend mockBackend
+    tokenProvider <- newWithProviders mockBackend
+                     (defaultProviders <> (AtpProbe providerProbeSimpleFixed :| []))
                      (AccessTokenName "some-random-token-name")
     (AccessToken token') <- retrieveAccessToken tokenProvider
     liftIO $ token @=? token'
@@ -69,7 +70,7 @@ fixedProviderReadsFromConf = do
   let conf = [fmt|{"provider": "fixed", "tokens": {"label1": "$token"}}|]
       testState = TestState
                   { _testStateFilesystem = Map.empty
-                  , _testStateEnvironment = Map.fromList [ ("ATP_CONF", conf) ]
+                  , _testStateEnvironment = Map.fromList [ ("ATP_CONF_FIXED", conf) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
                   , _testStateLog = []
@@ -85,7 +86,7 @@ fixedProviderReadsFromConfLookupFails = do
   let conf = [fmt|{"provider": "fixed", "tokens": {"label1": "$token"}}|]
       testState = TestState
                   { _testStateFilesystem = Map.empty
-                  , _testStateEnvironment = Map.fromList [ ("ATP_CONF", conf) ]
+                  , _testStateEnvironment = Map.fromList [ ("ATP_CONF_FIXED", conf) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
                   , _testStateLog = []
@@ -93,25 +94,6 @@ fixedProviderReadsFromConfLookupFails = do
   evalTestStack testState $ do
     Left _ <- tryAny $ newWithBackend mockBackend (AccessTokenName "label2")
     pure ()
-
-fileProviderReadsFromTokenFile :: Assertion
-fileProviderReadsFromTokenFile = do
-  tokenText <- tshow <$> (randomIO :: IO UUID)
-  let tokenBytes = Text.encodeUtf8 tokenText
-      filename = "/a/b/c"
-      testState = TestState
-                  { _testStateFilesystem =
-                      Map.fromList [ (filename, tokenBytes) ]
-                  , _testStateEnvironment =
-                      Map.fromList [ ("TOKEN_FILE", Text.pack filename) ]
-                  , _testStateHttpResponse = Nothing
-                  , _testStateHttpRequests = []
-                  , _testStateLog = []
-                  }
-  evalTestStack testState $ do
-    tokenProvider <- newWithBackend mockBackend (AccessTokenName "some-random-token-name")
-    (AccessToken token') <- retrieveAccessToken tokenProvider
-    liftIO $ tokenText @=? token'
 
 fileProviderReadsFromConf :: Assertion
 fileProviderReadsFromConf = do
@@ -123,7 +105,7 @@ fileProviderReadsFromConf = do
                   { _testStateFilesystem =
                       Map.fromList [ (filename, tokenBytes) ]
                   , _testStateEnvironment =
-                      Map.fromList [ ("ATP_CONF", conf) ]
+                      Map.fromList [ ("ATP_CONF_FILE", conf) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
                   , _testStateLog = []
@@ -143,7 +125,7 @@ fileProviderReadsFromConfLookupFails = do
                   { _testStateFilesystem =
                       Map.fromList [ (filename, tokenBytes) ]
                   , _testStateEnvironment =
-                      Map.fromList [ ("ATP_CONF", conf) ]
+                      Map.fromList [ ("ATP_CONF_FILE", conf) ]
                   , _testStateHttpResponse = Nothing
                   , _testStateHttpRequests = []
                   , _testStateLog = []
@@ -185,7 +167,7 @@ ropcgProviderReadsFromConf = do
                     [ ("/credentials/user.json",   userCredentials)
                     , ("/credentials/client.json", clientCredentials)
                     ]
-                  , _testStateEnvironment  = Map.fromList [ ("ATP_CONF", conf) ]
+                  , _testStateEnvironment  = Map.fromList [ ("ATP_CONF_ROPCG", conf) ]
                   , _testStateHttpResponse = Just response
                   , _testStateHttpRequests = []
                   , _testStateLog = []

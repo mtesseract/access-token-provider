@@ -8,7 +8,6 @@ module Security.AccessTokenProvider.Internal.Providers.Fixed
   ( providerProbeFixed
   ) where
 
-import           Control.Applicative
 import           Control.Exception.Safe
 import           Control.Lens
 import           Control.Monad.IO.Class
@@ -32,13 +31,7 @@ providerProbeFixed backend tokenName = do
   logAddNamespace "probe-fixed" $
     tryNewProvider tokenName makeEnvConf pure (createEnvTokenProvider backend)
 
-  where makeEnvConf = do
-          let envBackend = backendEnv backend
-          maybeToken <- envLookup envBackend  "TOKEN"
-          case maybeToken of
-            Just token -> pure . Just $ AtpConfFixed { _tokens = Just Map.empty
-                                                     , _token = Just token }
-            Nothing -> tryEnvDeserialization backend ("fixed" :| [])
+  where makeEnvConf = tryEnvDeserialization backend "FIXED" ("fixed" :| [])
 
 createEnvTokenProvider
   :: Monad m
@@ -49,8 +42,7 @@ createEnvTokenProvider
 createEnvTokenProvider backend (AccessTokenName tokenName) conf =
   let BackendLog { .. } = backendLog backend
       tokensMap  = fromMaybe Map.empty (conf^.L.tokens)
-      maybeToken = (conf^.L.token) <|> Map.lookup tokenName tokensMap
-  in case maybeToken of
+  in case Map.lookup tokenName tokensMap of
        Just token -> do
          logMsg Severity.Info [fmt|AccessTokenProvider started|]
          pure . Just $ AccessTokenProvider
