@@ -1,45 +1,53 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE QuasiQuotes           #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Security.AccessTokenProvider.Internal.Providers.Fixed
-  ( providerProbeFixed
+  ( probeProviderFixed
   ) where
 
 import           Control.Exception.Safe
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Data.Format
-import           Data.List.NonEmpty                                     (NonEmpty (..))
-import qualified Data.Map                                               as Map
+import qualified Data.Map                                             as Map
 import           Data.Maybe
+import qualified Data.Text.Encoding                                   as Text
 
-import qualified Security.AccessTokenProvider.Internal.Lenses           as L
-import           Security.AccessTokenProvider.Internal.Providers.Common
+import qualified Security.AccessTokenProvider.Internal.Lenses         as L
 import           Security.AccessTokenProvider.Internal.Types
-import qualified Security.AccessTokenProvider.Internal.Types.Severity   as Severity
+import qualified Security.AccessTokenProvider.Internal.Types.Severity as Severity
+import           Security.AccessTokenProvider.Internal.Util
 
-providerProbeFixed
+probeProviderFixed :: (MonadIO m, MonadCatch m) => AtpProbe m
+probeProviderFixed = AtpProbe probeProvider
+
+probeProvider
   :: (MonadIO m, MonadThrow m)
   => Backend m
   -> AccessTokenName
   -> m (Maybe (AccessTokenProvider m t))
-providerProbeFixed backend tokenName = do
+probeProvider backend tokenName = do
   let BackendLog { .. } = backendLog backend
-  logAddNamespace "probe-fixed" $
-    tryNewProvider tokenName makeEnvConf pure (createEnvTokenProvider backend)
+      BackendEnv { .. } = backendEnv backend
+  logAddNamespace "probe-fixed" $ do
+    envLookup "ATP_CONF_FIXED" >>= \ case
+      Just confS -> do
+        logMsg Severity.Info [fmt|Trying access token provider 'fixed'|]
+        throwDecode (Text.encodeUtf8 confS) >>= tryCreateProvider backend tokenName
+      Nothing ->
+        pure Nothing
 
-  where makeEnvConf = tryEnvDeserialization backend "FIXED" ("fixed" :| [])
-
-createEnvTokenProvider
+tryCreateProvider
   :: Monad m
   => Backend m
   -> AccessTokenName
   -> AtpConfFixed
   -> m (Maybe (AccessTokenProvider m t))
-createEnvTokenProvider backend (AccessTokenName tokenName) conf =
+tryCreateProvider backend (AccessTokenName tokenName) conf =
   let BackendLog { .. } = backendLog backend
       tokensMap  = fromMaybe Map.empty (conf^.L.tokens)
   in case Map.lookup tokenName tokensMap of

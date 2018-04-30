@@ -21,15 +21,17 @@ retrieveSomeToken = do
 
 ## Configuration
 
-Configuration is done by setting the environment variable `ATP_CONF`.
+Configuration is done by setting certain environment variables,
+depending on the provider.
 
 ### OAuth2 based token retrieval
 
-For OAuth2 (Resource Owner Password Credentials Grant) provider, use:
+The OAuth2 (Resource Owner Password Credentials Grant) provider
+expects the `ATP_CONF_ROPCG` environment variable to contain a JSON
+object as follows:
 
 ```json
 {
-  "provider": "ropcg",
   "credentials_directory": "/optional/credentials/directory",
   "auth_endpoint": "<OAuth2 authentication endpoint>",
   "tokens": {"token-name": {"scopes": ["first-scope", "second-scope"]}}
@@ -43,9 +45,11 @@ credentials respectively.
 
 ### File based token retrieval (e.g. for Kubernetes)
 
+The file based provider expects the `ATP_CONF_FILE` environment
+variable to contain a JSON object as follows:
+
 ```json
 {
-  "provider": "file",
   "tokens": {"token-name": "/some/file/name"}
 }
 ```
@@ -55,9 +59,11 @@ environment variable `TOKEN_FILE`.
 
 ### Environment based token retrieval (e.g. for testing)
 
+The file based provider expects the `ATP_CONF_FIXED` environment
+variable to contain a JSON object as follows:
+
 ```json
 {
-  "provider": "fixed",
   "tokens": {"token-name": "some-fixed-token"}
 }
 ```

@@ -26,7 +26,6 @@ library
                      , Security.AccessTokenProvider.Internal.Types.Severity
                      , Security.AccessTokenProvider.Internal.Lenses
                      , Security.AccessTokenProvider.Internal.Util
-                     , Security.AccessTokenProvider.Internal.Providers.Common
                      , Security.AccessTokenProvider.Internal.Providers.Fixed
                      , Security.AccessTokenProvider.Internal.Providers.SimpleFixed
                      , Security.AccessTokenProvider.Internal.Providers.File
