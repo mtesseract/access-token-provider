@@ -6,46 +6,49 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Security.AccessTokenProvider.Internal.Providers.File
-  ( providerProbeFile
+  ( probeProviderFile
   ) where
 
 import           Control.Exception.Safe
 import           Control.Lens
 import           Control.Monad.IO.Unlift
 import           Data.Format
-import           Data.List.NonEmpty                                     (NonEmpty (..))
-import qualified Data.Map                                               as Map
+import qualified Data.Map                                             as Map
 import           Data.Maybe
-import qualified Data.Text.Encoding                                     as Text
+import qualified Data.Text.Encoding                                   as Text
 import           UnliftIO.STM
 
-import qualified Security.AccessTokenProvider.Internal.Lenses           as L
-import           Security.AccessTokenProvider.Internal.Providers.Common
+import qualified Security.AccessTokenProvider.Internal.Lenses         as L
 import           Security.AccessTokenProvider.Internal.Types
-import qualified Security.AccessTokenProvider.Internal.Types.Severity   as Severity
+import qualified Security.AccessTokenProvider.Internal.Types.Severity as Severity
+import           Security.AccessTokenProvider.Internal.Util
 
-providerProbeFile
-  :: ( MonadCatch m
-     , MonadUnliftIO m )
+probeProviderFile :: (MonadUnliftIO m, MonadCatch m) => AtpProbe m
+probeProviderFile = AtpProbe probeProvider
+
+probeProvider
+  :: (MonadCatch m, MonadUnliftIO m)
   => Backend m
   -> AccessTokenName
   -> m (Maybe (AccessTokenProvider m t))
-providerProbeFile backend tokenName = do
+probeProvider backend tokenName = do
   let BackendLog { .. } = backendLog backend
-  logAddNamespace "probe-file" $
+      BackendEnv { .. } = backendEnv backend
+  logAddNamespace "probe-file" $ do
+    envLookup "ATP_CONF_FILE" >>= \ case
+      Just confS -> do
+        logMsg Severity.Info [fmt|Trying access token provider 'file'|]
+        throwDecode (Text.encodeUtf8 confS) >>= tryCreateProvider backend tokenName
+      Nothing ->
+        pure Nothing
 
-    tryNewProvider tokenName makeConf pure (createFilePathTokenProvider backend)
-
-  where makeConf = tryEnvDeserialization backend "FILE" ("file" :| [])
-
-createFilePathTokenProvider
-  :: ( MonadUnliftIO m
-     , MonadCatch m )
+tryCreateProvider
+  :: (MonadUnliftIO m, MonadCatch m)
   => Backend m
   -> AccessTokenName
   -> AtpConfFile
   -> m (Maybe (AccessTokenProvider m t))
-createFilePathTokenProvider backend (AccessTokenName tokenName) conf = do
+tryCreateProvider backend (AccessTokenName tokenName) conf = do
   let BackendLog { .. } = backendLog backend
       tokenFileMap = fromMaybe Map.empty (conf ^. L.tokens)
   case Map.lookup tokenName tokenFileMap of
@@ -62,8 +65,7 @@ createFilePathTokenProvider backend (AccessTokenName tokenName) conf = do
                                    , releaseProvider     = pure () }
 
 newReadAction
-  :: ( MonadUnliftIO m
-     , MonadCatch m )
+  :: (MonadUnliftIO m, MonadCatch m)
   => Backend m
   -> FilePath
   -> m (m (AccessToken t))

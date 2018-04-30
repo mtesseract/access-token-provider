@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 
 module Security.AccessTokenProvider.Internal.Providers.OAuth2.Ropcg
-  ( providerProbeRopcg
+  ( probeProviderRopcg
   ) where
 
 import           Control.Exception.Safe
@@ -15,44 +15,49 @@ import           Control.Monad
 import           Control.Monad.IO.Class
 import           Control.Monad.IO.Unlift
 import           Data.Aeson
-import qualified Data.ByteString                                        as ByteString
-import qualified Data.ByteString.Base64                                 as B64
+import qualified Data.ByteString                                      as ByteString
+import qualified Data.ByteString.Base64                               as B64
 import           Data.Format
-import           Data.List.NonEmpty                                     (NonEmpty (..))
-import qualified Data.Map                                               as Map
+import qualified Data.Map                                             as Map
 import           Data.Maybe
 import           Data.Monoid
-import qualified Data.Text                                              as Text
-import qualified Data.Text.Encoding                                     as Text
+import qualified Data.Text                                            as Text
+import qualified Data.Text.Encoding                                   as Text
 import           Network.HTTP.Client
 import           Network.HTTP.Client.TLS
 import           Network.HTTP.Types
-import qualified System.Environment                                     as Env
+import qualified System.Environment                                   as Env
 import           System.FilePath
 import           System.Random
 import           UnliftIO.Async
 import           UnliftIO.Concurrent
 import           UnliftIO.STM
 
-import qualified Security.AccessTokenProvider.Internal.Lenses           as L
-import           Security.AccessTokenProvider.Internal.Providers.Common
+import qualified Security.AccessTokenProvider.Internal.Lenses         as L
 import           Security.AccessTokenProvider.Internal.Types
-import qualified Security.AccessTokenProvider.Internal.Types.Severity   as Severity
+import qualified Security.AccessTokenProvider.Internal.Types.Severity as Severity
 import           Security.AccessTokenProvider.Internal.Util
 
-providerProbeRopcg
-  :: ( MonadMask m
-     , MonadUnliftIO m )
+probeProviderRopcg :: (MonadMask m, MonadUnliftIO m) => AtpProbe m
+probeProviderRopcg = AtpProbe probeProvider
+
+probeProvider
+  :: (MonadMask m, MonadUnliftIO m)
   => Backend m
   -> AccessTokenName
   -> m (Maybe (AccessTokenProvider m t))
-providerProbeRopcg backend tokenName =
-  tryNewProvider tokenName mkConf createRopcgConf
-  (createTokenProviderResourceOwnerPasswordCredentials backend)
-
-  where mkConf =
-          tryEnvDeserialization backend "ROPCG"
-          ("resource-owner-password-credentials-grant" :| ["ropcg"])
+probeProvider backend tokenName = do
+  let BackendLog { .. } = backendLog backend
+      BackendEnv { .. } = backendEnv backend
+  logAddNamespace "probe-ropcg" $ do
+    envLookup "ATP_CONF_ROPCG" >>= \ case
+      Just confS -> do
+        logMsg Severity.Info [fmt|Trying access token provider 'ropcg'|]
+        throwDecode (Text.encodeUtf8 confS)
+          >>= createRopcgConf
+          >>= tryCreateProvider backend tokenName
+      Nothing ->
+        pure Nothing
 
 -- | Derive an authorization header from provided client credentials.
 makeBasicAuthorizationHeader
@@ -84,7 +89,7 @@ retrieveJson backend filename = do
 
 -- | Retrieve credentials from credentials directory.
 retrieveCredentials
-  :: (MonadCatch m)
+  :: MonadCatch m
   => Backend m
   -> AtpConfRopcg
   -> m Credentials
@@ -101,18 +106,6 @@ retrieveCredentials backend conf = do
           if isAbsolute filename
           then filename
           else baseDir </> filename
-
-maskHttpRequest
-  :: Request
-  -> Request
-maskHttpRequest req =
-  req { requestHeaders = maskHttpHeaders headers }
-  where headers = requestHeaders req
-
-        maskHttpHeaders = map maskHttpHeader
-
-        maskHttpHeader ("Authorization", _) = ("Authorization", "XXXXXXXXXXXXXXXX")
-        maskHttpHeader hdr = hdr
 
 -- | Environment variable expected to contain the path to the mint
 -- credentials.
@@ -155,11 +148,11 @@ createRopcgConf envConf = do
     }
 
   where defaultResourceOwnerPasswordFile = "user.json"
-        defaultClientPasswordFile = "client.json"
+        defaultClientPasswordFile        = "client.json"
 
 -- | Main refreshing function.
 tryRefreshToken
-  :: ( MonadCatch m )
+  :: MonadCatch m
   => Backend m
   -> AtpConfRopcg
   -> AccessTokenName
@@ -178,8 +171,7 @@ tryRefreshToken backend conf tokenName tokenDef =
       httpRequest    = (conf^.L.authEndpoint) { method = "POST"
                                               , requestHeaders = [authorization] }
                        & urlEncodedBody bodyParameters
-      maskedRequest  = Text.pack . show $ maskHttpRequest httpRequest
-  logMsg Severity.Debug [fmt|HTTP Request for token refreshing: $maskedRequest|]
+  logMsg Severity.Debug [fmt|HTTP Request for token refreshing: ${tshow httpRequest}|]
   response <- httpRequestExecute httpBackend httpRequest
   let status = responseStatus response
       body   = responseBody response
@@ -254,14 +246,13 @@ defaultRefreshInterval = 60
 defaultRefreshTimeFactor :: Double
 defaultRefreshTimeFactor = 0.8
 
-createTokenProviderResourceOwnerPasswordCredentials
-  :: ( MonadUnliftIO m
-     , MonadMask m )
+tryCreateProvider
+  :: (MonadUnliftIO m, MonadMask m)
   => Backend m
   -> AccessTokenName
   -> AtpConfRopcg
   -> m (Maybe (AccessTokenProvider m t))
-createTokenProviderResourceOwnerPasswordCredentials backend tokenName conf = do
+tryCreateProvider backend tokenName conf = do
   let (AccessTokenName tokenNameText) = tokenName
       BackendLog { .. } = backendLog backend
       maybeTokenDef = Map.lookup tokenNameText (conf^.L.tokens)
@@ -279,8 +270,7 @@ createTokenProviderResourceOwnerPasswordCredentials backend tokenName conf = do
           pure AccessTokenProvider { retrieveAccessToken = retrieveAction
                                    , releaseProvider     = releaseAction }
 newRetrieveAction
-  :: ( MonadUnliftIO m
-     , MonadCatch m )
+  :: (MonadUnliftIO m, MonadCatch m)
   => Backend m
   -> AtpConfRopcg
   -> AccessTokenName

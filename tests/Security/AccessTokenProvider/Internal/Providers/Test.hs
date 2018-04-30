@@ -11,7 +11,6 @@ import           Control.Lens
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Lazy                       as ByteString.Lazy
 import           Data.Format
-import           Data.List.NonEmpty                         (NonEmpty (..))
 import qualified Data.List.NonEmpty                         as NonEmpty
 import qualified Data.Map.Strict                            as Map
 import           Data.Semigroup
@@ -34,15 +33,15 @@ securityAccessTokenProviderInternalProvidersTest =
   [ testGroup "Security.AccessTokenProvider.Internal.Providers"
     [ testCase "SimpleFixed Provider reads from TOKEN"
         simpleFixedProviderReadsFromToken
-    , testCase "Fixed Provider reads from ATP_CONF"
+    , testCase "Fixed Provider reads from ATP_CONF_FIXED"
         fixedProviderReadsFromConf
-    , testCase "Fixed Provider reads from ATP_CONF and lookup fails"
+    , testCase "Fixed Provider reads from ATP_CONF_FIXED and lookup fails"
         fixedProviderReadsFromConfLookupFails
-    , testCase "File Provider reads from ATP_CONF"
+    , testCase "File Provider reads from ATP_CONF_FILE"
         fileProviderReadsFromConf
-    , testCase "File Provider reads from ATP_CONF and lookup fails"
+    , testCase "File Provider reads from ATP_CONF_FILE and lookup fails"
         fileProviderReadsFromConfLookupFails
-    , testCase "Ropcg Provider reads from ATP_CONF"
+    , testCase "Ropcg Provider reads from ATP_CONF_ROPCG"
         ropcgProviderReadsFromConf
     ]
   ]
@@ -59,7 +58,7 @@ simpleFixedProviderReadsFromToken = do
                   }
   evalTestStack testState $ do
     tokenProvider <- newWithProviders mockBackend
-                     (defaultProviders <> (AtpProbe providerProbeSimpleFixed :| []))
+                     (defaultProviders <> pure probeProviderSimpleFixed)
                      (AccessTokenName "some-random-token-name")
     (AccessToken token') <- retrieveAccessToken tokenProvider
     liftIO $ token @=? token'
@@ -67,7 +66,7 @@ simpleFixedProviderReadsFromToken = do
 fixedProviderReadsFromConf :: Assertion
 fixedProviderReadsFromConf = do
   token <- tshow <$> (randomIO :: IO UUID)
-  let conf = [fmt|{"provider": "fixed", "tokens": {"label1": "$token"}}|]
+  let conf = [fmt|{"tokens": {"label1": "$token"}}|]
       testState = TestState
                   { _testStateFilesystem = Map.empty
                   , _testStateEnvironment = Map.fromList [ ("ATP_CONF_FIXED", conf) ]
@@ -83,7 +82,7 @@ fixedProviderReadsFromConf = do
 fixedProviderReadsFromConfLookupFails :: Assertion
 fixedProviderReadsFromConfLookupFails = do
   token <- tshow <$> (randomIO :: IO UUID)
-  let conf = [fmt|{"provider": "fixed", "tokens": {"label1": "$token"}}|]
+  let conf = [fmt|{"tokens": {"label1": "$token"}}|]
       testState = TestState
                   { _testStateFilesystem = Map.empty
                   , _testStateEnvironment = Map.fromList [ ("ATP_CONF_FIXED", conf) ]
@@ -100,7 +99,7 @@ fileProviderReadsFromConf = do
   tokenText <- tshow <$> (randomIO :: IO UUID)
   let tokenBytes = Text.encodeUtf8 tokenText
       filename = "/a/b/c"
-      conf = [fmt|{"provider": "file", "tokens": {"label1": "$filename"}}|]
+      conf = [fmt|{"tokens": {"label1": "$filename"}}|]
       testState = TestState
                   { _testStateFilesystem =
                       Map.fromList [ (filename, tokenBytes) ]
@@ -120,7 +119,7 @@ fileProviderReadsFromConfLookupFails = do
   tokenText <- tshow <$> (randomIO :: IO UUID)
   let tokenBytes = Text.encodeUtf8 tokenText
       filename = "/a/b/c"
-      conf = [fmt|{"provider": "file", "tokens": {"label1": "$filename"}}|]
+      conf = [fmt|{"tokens": {"label1": "$filename"}}|]
       testState = TestState
                   { _testStateFilesystem =
                       Map.fromList [ (filename, tokenBytes) ]

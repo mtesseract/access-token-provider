@@ -37,7 +37,7 @@ namespace :: Text
 namespace = "access-token-provider"
 
 newWithProviders
-  :: (MonadThrow m)
+  :: MonadThrow m
   => Backend m
   -> NonEmpty (AtpProbe m)
   -> AccessTokenName
@@ -65,9 +65,7 @@ new = newWithProviders backendIO defaultProviders
 defaultProviders :: (MonadUnliftIO m, MonadMask m)
                  => NonEmpty (AtpProbe m)
 defaultProviders =
-  AtpProbe providerProbeFixed
-  :| [ AtpProbe providerProbeFile
-     , AtpProbe providerProbeRopcg ]
+  probeProviderFixed :| [ probeProviderFile, probeProviderRopcg ]
 
 httpRequestExecuteIO :: MonadIO m => Request -> m (Response LazyByteString)
 httpRequestExecuteIO request = do
@@ -120,14 +118,8 @@ logMsgIO severity msg =
   say $ "[" <> tshow severity <> "] " <> msg
 
 newWithBackend
-  :: ( MonadUnliftIO m
-     , MonadMask m )
+  :: (MonadUnliftIO m, MonadMask m)
   => Backend m
   -> AccessTokenName
   -> m (AccessTokenProvider m t)
-newWithBackend backend = newWithProviders backend providers
-
-  where providers =
-          AtpProbe providerProbeFixed
-          :| [ AtpProbe providerProbeFile
-             , AtpProbe providerProbeRopcg ]
+newWithBackend backend = newWithProviders backend defaultProviders

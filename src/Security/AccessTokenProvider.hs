@@ -2,10 +2,10 @@ module Security.AccessTokenProvider
   ( new
   , newWithProviders
   , newWithBackend
-  , providerProbeFile
-  , providerProbeFixed
-  , providerProbeSimpleFixed
-  , providerProbeRopcg
+  , probeProviderFile
+  , probeProviderFixed
+  , probeProviderSimpleFixed
+  , probeProviderRopcg
   , defaultProviders
   , AccessTokenName(..)
   , AccessTokenProvider(..)
