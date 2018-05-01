@@ -16,6 +16,8 @@ import           Data.Format
 import           Security.AccessTokenProvider.Internal.Types
 import qualified Security.AccessTokenProvider.Internal.Types.Severity as Severity
 
+-- | Access Token Provider prober for access token retrieval from the
+-- @TOKEN@ environment retrieval.
 probeProviderSimpleFixed :: (MonadIO m, MonadCatch m) => AtpProbe m
 probeProviderSimpleFixed = AtpProbe probeProvider
 
@@ -46,5 +48,5 @@ tryCreateProvider backend _accessTokenName accessToken = do
   logMsg Severity.Info [fmt|AccessTokenProvider started|]
   pure . Just $ AccessTokenProvider
     { retrieveAccessToken = pure accessToken
-    , releaseProvider = pure ()
+    , releaseProvider     = pure ()
     }

@@ -22,6 +22,8 @@ import           Security.AccessTokenProvider.Internal.Types
 import qualified Security.AccessTokenProvider.Internal.Types.Severity as Severity
 import           Security.AccessTokenProvider.Internal.Util
 
+-- | Access Token Provider prober for environment based access token
+-- retrieval.
 probeProviderFixed :: (MonadIO m, MonadCatch m) => AtpProbe m
 probeProviderFixed = AtpProbe probeProvider
 

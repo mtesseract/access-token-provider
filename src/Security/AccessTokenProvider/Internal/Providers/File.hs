@@ -23,6 +23,8 @@ import           Security.AccessTokenProvider.Internal.Types
 import qualified Security.AccessTokenProvider.Internal.Types.Severity as Severity
 import           Security.AccessTokenProvider.Internal.Util
 
+-- | Access Token Provider prober for file based access token
+-- retrieval.
 probeProviderFile :: (MonadUnliftIO m, MonadCatch m) => AtpProbe m
 probeProviderFile = AtpProbe probeProvider
 

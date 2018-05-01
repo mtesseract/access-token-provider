@@ -1,11 +1,10 @@
-# Access Token Provider
+# Access Token Provider [![Hackage version](https://img.shields.io/hackage/v/access-token-provider.svg?label=Hackage)](https://hackage.haskell.org/package/access-token-provider) [![Stackage version](https://www.stackage.org/package/access-token-provider/badge/lts?label=Stackage)](https://www.stackage.org/package/access-token-provider) [![Build Status](https://travis-ci.org/mtesseract/access-token-provider.svg?branch=master)](https://travis-ci.org/mtesseract/access-token-provider)
 
-This package provides a convenient retrieval mechanism of access
-tokens. Access Token Provider supporting multiple provider backends,
-including OAuth2 Resource Owner Password Credentials Grant, file-based
-token access (e.g. for Kubernetes) and fetching tokens from the
-environment (e.g. for local testing). The package is configurable via
-environment variables. It uses Katip for logging.
+This package provides a convenient retrieval mechanism for access
+tokens. Multiple provider backends, including OAuth2 Resource Owner
+Password Credentials Grant, file-based token access (e.g. for
+Kubernetes) and fetching tokens from the environment (e.g. for local
+testing) are supported; custom provider backends can easily be added.
 
 ## Examples
 
@@ -67,6 +66,3 @@ variable to contain a JSON object as follows:
   "tokens": {"token-name": "some-fixed-token"}
 }
 ```
-
-As a short cut, you can simply save a token directly in the
-environment variable `TOKEN`.
