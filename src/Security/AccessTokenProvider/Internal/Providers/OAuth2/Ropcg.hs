@@ -38,6 +38,8 @@ import           Security.AccessTokenProvider.Internal.Types
 import qualified Security.AccessTokenProvider.Internal.Types.Severity as Severity
 import           Security.AccessTokenProvider.Internal.Util
 
+-- | Access Token Provider prober for access token retrieval via
+-- OAuth2 Resource-Owner-Password-Credentails-Grant.
 probeProviderRopcg :: (MonadMask m, MonadUnliftIO m) => AtpProbe m
 probeProviderRopcg = AtpProbe probeProvider
 
